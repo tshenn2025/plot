@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mystery Coloring Book — Press SPACE to Reveal Colors!</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<style>
+  body { margin:0; background:#f0f0fa; font-family:Arial,sans-serif; overflow:auto; -webkit-overflow-scrolling:touch; user-select:none; }
+  /* default: allow pinch/scroll. we'll switch to 'none' while single-finger drawing */
+  canvas { display:block; image-rendering:pixelated; touch-action: manipulation; -ms-touch-action: manipulation; }
+  /* #info { position:absolute; top:10px; left:550px; background:rgba(255,255,255,0.8); padding:8px 12px; border-radius:8px; font-size:14px; pointer-events:none; } */
+  .popup { background:rgba(255,255,255,0.95); padding:8px 10px; border-radius:6px; font-family:Arial,sans-serif; z-index:10; position:absolute; display:none; }
+  .popup input[type="range"] { vertical-align:middle; }
+</style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+<!-- <div id="info">Long press tools for size • Tap color preview for palette • Tap "Reveal" below to show colors!</div> -->
+ <style>
+  body, html {
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    background: #f0f0fa;
+    font-family: Arial, sans-serif;
+    overflow-x: hidden;
+    touch-action: manipulation;
+  }
+
+  /* This wrapper keeps everything centered and removes right blank space */
+  #wrapper {
+    position: relative;
+    width: fit-content;           /* shrinks to content */
+    max-width: 100vw;
+    margin: 20px auto;
+    box-shadow: 0 0 20px rgba(0,0,0,0.1);
+    border-radius: 12px;
+    overflow: hidden;
+    background: white;
+  }
+
+  canvas {
+    display: block;
+    image-rendering: pixelated;
+    touch-action: manipulation;
+  }
+
+  .popup {
+    background: rgba(255,255,255,0.95);
+    padding: 10px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    z-index: 10;
+    position: absolute;
+    display: none;
+  }
+</style>
+<script>
+// ====================== SETTINGS ======================
+const IMAGE_PATH = "images.jpg";   // Your coloring page (must be in same folder) - change to your file name if it's .png
+const ZOOM = 0.7;
+const BRUSH_SIZE_MIN = 1;
+const BRUSH_SIZE_MAX = 10;
+const BRUSH_STEP = 1;
+// =====================================================
+
+const canvas = document.getElementById('canvas');
+let ctx = canvas.getContext('2d');
+
+let brushSize = 3;
+let drawing = false;
+let revealed = false;
+let currentColor = {r:255, g:100, b:150};
+let grayColor = 128;
+let isErasing = false;
+let eraserSize = 3;
+
+// Off-screen canvases (will be created after image loads)
+let baseColorCanvas, grayCanvas, maskCanvas, maskCtx;
+let maskGrayCanvas, maskGrayCtx;
+let wheelCanvas, sliderCanvas;
+
+let logicalW, logicalH;
+
+// Load image
+const img = new Image();
+img.crossOrigin = "anonymous";
+img.src = IMAGE_PATH + "?t=" + Date.now();
+
+// Helper to create properly scaled offscreen canvases
+const createScaledCanvas = (w, h, dpr) => {
+    const c = document.createElement('canvas');
+    c.width = w * dpr;
+    c.height = h * dpr;
+    c.style.width = w + 'px';
+    c.style.height = h + 'px';
+    c.getContext('2d').scale(dpr, dpr);
+    return c;
+};
+
+function initCanvas() {
+    let oldMaskCanvas, oldMaskGrayCanvas;
+    if (maskCanvas) {
+        oldMaskCanvas = maskCanvas;
+        oldMaskGrayCanvas = maskGrayCanvas;
+    }
+
+    let zoom = Math.min(ZOOM, (window.innerWidth * 0.95) / img.width, (window.innerHeight * 0.75) / img.height);
+    logicalW = img.width * zoom;
+    logicalH = img.height * zoom;
+    const dpr = window.devicePixelRatio || 1;
+
+    // Set real buffer size
+    canvas.width = logicalW * dpr;
+    canvas.height = logicalH * dpr;
+    canvas.style.width = logicalW + 'px';
+    canvas.style.height = logicalH + 'px';
+
+    // Scale context so drawing is still in logical pixels
+    ctx = canvas.getContext('2d'); // Re-get context in case
+    ctx.scale(dpr, dpr);
+
+    // Create offscreen canvases
+    baseColorCanvas = createScaledCanvas(logicalW, logicalH, dpr);
+    baseColorCanvas.getContext('2d').drawImage(img, 0, 0, logicalW, logicalH);
+
+    grayCanvas = createScaledCanvas(logicalW, logicalH, dpr);
+    const gctx = grayCanvas.getContext('2d');
+    gctx.drawImage(img, 0, 0, logicalW, logicalH);
+    const imgData = gctx.getImageData(0, 0, logicalW, logicalH);
+    const data = imgData.data;
+    for (let i = 0; i < data.length; i += 4) {
+        const gray = data[i] * 0.299 + data[i+1] * 0.587 + data[i+2] * 0.114;
+        data[i] = data[i+1] = data[i+2] = gray;
+    }
+    gctx.putImageData(imgData, 0, 0);
+
+    maskCanvas = createScaledCanvas(logicalW, logicalH, dpr);
+    maskCtx = maskCanvas.getContext('2d');
+
+    maskGrayCanvas = createScaledCanvas(logicalW, logicalH, dpr);
+    maskGrayCtx = maskGrayCanvas.getContext('2d');
+
+    if (oldMaskCanvas) {
+        maskCtx.drawImage(oldMaskCanvas, 0, 0, logicalW, logicalH);
+        maskGrayCtx.drawImage(oldMaskGrayCanvas, 0, 0, logicalW, logicalH);
+    }
+
+    // Update reveal button position if exists
+    const revealBtn = document.getElementById('revealBtn');
+    if (revealBtn) {
+        revealBtn.style.top = `${logicalH + 10}px`;
+    }
+}
+
+img.onload = () => {
+    initCanvas();
+    // UI
+    createPickerUI();
+    createToolButtons();
+    createRevealButton(logicalH);
+    updateColorPreview();
+    updateModeButtons();
+
+    requestAnimationFrame(draw);
+};
+
+window.addEventListener('resize', initCanvas);
+
+img.onerror = () => {
+    ctx.fillStyle = "#ff5555";
+    ctx.font = "30px Arial";
+    ctx.fillText("Error: Could not load " + IMAGE_PATH, 20, 60);
+    ctx.fillText("Make sure the file exists and is named exactly:", 20, 120);
+    ctx.fillText(IMAGE_PATH + " (check case and extension)", 20, 160);
+};
+
+// ---------- Helper: make grayscale version ----------
+function createGrayscaleCanvas(img, w, h) {
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const gctx = c.getContext('2d');
+    gctx.drawImage(img, 0, 0, w, h);
+    const imageData = gctx.getImageData(0, 0, w, h);
+    const data = imageData.data;
+    for (let i = 0; i < data.length; i += 4) {
+        const gray = data[i] * 0.299 + data[i+1] * 0.587 + data[i+2] * 0.114;
+        data[i] = data[i+1] = data[i+2] = gray;
+    }
+    gctx.putImageData(imageData, 0, 0);
+    return c;
+}
+
+// ---------- HSV → RGB ----------
+function hsvToRgb(h, s, v) {
+    let r, g, b;
+    const i = Math.floor(h * 6);
+    const f = h * 6 - i;
+    const p = v * (1 - s);
+    const q = v * (1 - f * s);
+    const t = v * (1 - (1 - f) * s);
+    switch (i % 6) {
+        case 0: r = v, g = t, b = p; break;
+        case 1: r = q, g = v, b = p; break;
+        case 2: r = p, g = v, b = t; break;
+        case 3: r = p, g = q, b = v; break;
+        case 4: r = t, g = p, b = v; break;
+        case 5: r = v, g = p, b = q; break;
+    }
+    return {r: Math.round(r*255), g: Math.round(g*255), b: Math.round(b*255)};
+}
+
+// ---------- Build circular grayscale-looking color wheel & slider ----------
+function createPickerUI() {
+    const size = 180;
+    const radius = size / 2;
+
+    // Wheel (circular)
+    wheelCanvas = document.createElement('canvas');
+    wheelCanvas.width = wheelCanvas.height = size;
+    wheelCanvas.style.borderRadius = '50%';
+    const wctx = wheelCanvas.getContext('2d');
+    for (let px = 0; px < size; px++) {
+        for (let py = 0; py < size; py++) {
+            const dx = px - radius;
+            const dy = py - radius;
+            const distSq = dx * dx + dy * dy;
+            if (distSq > radius * radius) continue;
+            let hue = Math.atan2(dy, dx) / (2 * Math.PI);
+            hue = (hue + 1) % 1;
+            const s = Math.sqrt(distSq) / radius;
+            const rgb = hsvToRgb(hue, s, 1);
+            const gray = Math.round(rgb.r * 0.299 + rgb.g * 0.587 + rgb.b * 0.114);
+            const g = Math.max(30, Math.min(225, gray));
+            wctx.fillStyle = `rgb(${g},${g},${g})`;
+            wctx.fillRect(px, py, 1, 1);
+        }
+    }
+
+    // Slider
+    sliderCanvas = document.createElement('canvas');
+    sliderCanvas.width = 30; sliderCanvas.height = size;
+    sliderCanvas.style.marginLeft = '20px';
+    sliderCanvas.style.verticalAlign = 'top';
+    updateSlider();
+
+    // Palette popup
+    const palettePopup = document.createElement('div');
+    palettePopup.id = 'palettePopup';
+    palettePopup.classList.add('popup');
+    palettePopup.style.top = '60px';
+    palettePopup.style.right = '10px';
+    palettePopup.appendChild(wheelCanvas);
+    palettePopup.appendChild(sliderCanvas);
+    document.body.appendChild(palettePopup);
+
+    // Color preview button
+    const colorPreview = document.createElement('div');
+    colorPreview.id = 'colorPreview';
+    colorPreview.style.position = 'absolute';
+    colorPreview.style.top = '10px';
+    colorPreview.style.right = '10px';
+    colorPreview.style.width = '40px';
+    colorPreview.style.height = '40px';
+    colorPreview.style.borderRadius = '50%';
+    colorPreview.style.border = '2px solid #333';
+    colorPreview.style.cursor = 'pointer';
+    document.body.appendChild(colorPreview);
+
+    // Toggle palette on preview click
+    colorPreview.addEventListener('click', (e) => {
+        e.stopPropagation();
+        palettePopup.style.display = palettePopup.style.display === 'none' || palettePopup.style.display === '' ? 'block' : 'none';
+    });
+
+    // Hide palette on click outside
+    document.addEventListener('click', (e) => {
+        if (palettePopup.style.display === 'block' && !palettePopup.contains(e.target) && e.target !== colorPreview) {
+            palettePopup.style.display = 'none';
+        }
+    });
+
+    // Wheel click handler
+    wheelCanvas.addEventListener('pointerdown', (e) => {
+        const rect = wheelCanvas.getBoundingClientRect();
+        const px = e.clientX - rect.left;
+        const py = e.clientY - rect.top;
+        const dx = px - radius;
+        const dy = py - radius;
+        const distSq = dx * dx + dy * dy;
+        if (distSq > radius * radius) return;
+        let hue = Math.atan2(dy, dx) / (2 * Math.PI);
+        hue = (hue + 1) % 1;
+        const s = Math.sqrt(distSq) / radius;
+        currentColor = hsvToRgb(hue, s, 1);
+        grayColor = Math.round(currentColor.r * 0.299 + currentColor.g * 0.587 + currentColor.b * 0.114);
+        updateSlider();
+        updateColorPreview();
+    });
+
+    // Slider click handler
+    sliderCanvas.addEventListener('pointerdown', (e) => {
+        const rect = sliderCanvas.getBoundingClientRect();
+        const py = e.clientY - rect.top;
+        let brightness = 1 - py / size;
+        brightness = Math.max(0.2, Math.min(1, brightness));
+        currentColor.r = Math.round(currentColor.r * brightness);
+        currentColor.g = Math.round(currentColor.g * brightness);
+        currentColor.b = Math.round(currentColor.b * brightness);
+        grayColor = Math.round(currentColor.r * 0.299 + currentColor.g * 0.587 + currentColor.b * 0.114);
+        updateSlider();
+        updateColorPreview();
+    });
+}
+
+// Update brightness slider when color changes
+function updateSlider() {
+    if (!sliderCanvas) return;
+    const sctx = sliderCanvas.getContext('2d');
+    const base = Math.round(currentColor.r*0.299 + currentColor.g*0.587 + currentColor.b*0.114);
+    for (let py = 0; py < sliderCanvas.height; py++) {
+        const brightness = Math.max(0.2, 1 - py / sliderCanvas.height);
+        const g = Math.round(base * brightness);
+        sctx.fillStyle = `rgb(${g},${g},${g})`;
+        sctx.fillRect(0, py, 30, 1);
+    }
+}
+
+function updateColorPreview() {
+    const colorPreview = document.getElementById('colorPreview');
+    if (colorPreview) {
+        colorPreview.style.background = `rgb(${grayColor},${grayColor},${grayColor})`;
+    }
+}
+
+// Create brush and eraser buttons
+function createToolButtons() {
+    const LONG_PRESS_TIME = 500;
+    let longPressTimer;
+
+    // Brush button
+    const brushBtn = document.createElement('button');
+    brushBtn.innerText = 'B';
+    brushBtn.id = 'brushBtn';
+    brushBtn.classList.add('btn', 'btn-primary', 'rounded-circle');
+    brushBtn.style.position = 'absolute';
+    brushBtn.style.top = '10px';
+    brushBtn.style.left = '10px';
+    brushBtn.style.width = '50px';
+    brushBtn.style.height = '50px';
+    document.body.appendChild(brushBtn);
+
+    // Eraser button
+    const eraserBtn = document.createElement('button');
+    eraserBtn.innerText = 'E';
+    eraserBtn.id = 'eraserBtn';
+    eraserBtn.classList.add('btn', 'btn-secondary', 'rounded-circle');
+    eraserBtn.style.position = 'absolute';
+    eraserBtn.style.top = '70px';
+    eraserBtn.style.left = '10px';
+    eraserBtn.style.width = '50px';
+    eraserBtn.style.height = '50px';
+    document.body.appendChild(eraserBtn);
+
+    // Brush slider popup
+    const brushSliderPopup = document.createElement('div');
+    brushSliderPopup.id = 'brushSliderPopup';
+    brushSliderPopup.classList.add('popup');
+    brushSliderPopup.style.top = '10px';
+    brushSliderPopup.style.left = '70px';
+    brushSliderPopup.innerHTML = `
+        <label for="brushRange">Brush Size</label>
+        <input id="brushRange" type="range" min="1" max="10" step="1" value="${brushSize}">
+        <span id="brushVal">${brushSize}</span>px
+    `;
+    document.body.appendChild(brushSliderPopup);
+    const brushRange = document.getElementById('brushRange');
+    const brushVal = document.getElementById('brushVal');
+    brushRange.addEventListener('input', (e) => {
+        brushSize = parseInt(e.target.value);
+        brushVal.textContent = brushSize;
+    });
+
+    // Eraser slider popup
+    const eraserSliderPopup = document.createElement('div');
+    eraserSliderPopup.id = 'eraserSliderPopup';
+    eraserSliderPopup.classList.add('popup');
+    eraserSliderPopup.style.top = '70px';
+    eraserSliderPopup.style.left = '70px';
+    eraserSliderPopup.innerHTML = `
+        <label for="eraserRange">Eraser Size</label>
+        <input id="eraserRange" type="range" min="2" max="10" step="1" value="${eraserSize}">
+        <span id="eraserVal">${eraserSize}</span>px
+    `;
+    document.body.appendChild(eraserSliderPopup);
+    const eraserRange = document.getElementById('eraserRange');
+    const eraserVal = document.getElementById('eraserVal');
+    eraserRange.addEventListener('input', (e) => {
+        eraserSize = parseInt(e.target.value);
+        eraserVal.textContent = eraserSize;
+    });
+
+    // Hide popups on click outside
+    document.addEventListener('click', (e) => {
+        if (brushSliderPopup.style.display === 'block' && !brushSliderPopup.contains(e.target) && e.target !== brushBtn) {
+            brushSliderPopup.style.display = 'none';
+        }
+        if (eraserSliderPopup.style.display === 'block' && !eraserSliderPopup.contains(e.target) && e.target !== eraserBtn) {
+            eraserSliderPopup.style.display = 'none';
+        }
+    });
+
+    // Brush button events
+    brushBtn.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        longPressTimer = setTimeout(() => {
+            brushSliderPopup.style.display = 'block';
+        }, LONG_PRESS_TIME);
+    });
+    brushBtn.addEventListener('pointerup', () => {
+        clearTimeout(longPressTimer);
+        isErasing = false;
+        updateModeButtons();
+    });
+
+    // Eraser button events
+    eraserBtn.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        longPressTimer = setTimeout(() => {
+            eraserSliderPopup.style.display = 'block';
+        }, LONG_PRESS_TIME);
+    });
+    eraserBtn.addEventListener('pointerup', () => {
+        clearTimeout(longPressTimer);
+        isErasing = true;
+        updateModeButtons();
+    });
+}
+
+function updateModeButtons() {
+    const brushBtn = document.getElementById('brushBtn');
+    const eraserBtn = document.getElementById('eraserBtn');
+    if (brushBtn && eraserBtn) {
+        if (isErasing) {
+            brushBtn.classList.remove('btn-primary');
+            brushBtn.classList.add('btn-secondary');
+            eraserBtn.classList.remove('btn-secondary');
+            eraserBtn.classList.add('btn-primary');
+        } else {
+            brushBtn.classList.remove('btn-secondary');
+            brushBtn.classList.add('btn-primary');
+            eraserBtn.classList.remove('btn-primary');
+            eraserBtn.classList.add('btn-secondary');
+        }
+    }
+    canvas.style.cursor = isErasing ? 'cell' : 'crosshair';
+}
+
+// Create reveal button
+function createRevealButton(h) {
+    const revealBtn = document.createElement('button');
+    revealBtn.id = 'revealBtn';
+    revealBtn.textContent = 'Reveal Colors';
+    revealBtn.classList.add('btn', 'btn-success');
+    revealBtn.style.position = 'absolute';
+    revealBtn.style.top = `${h + 10}px`;
+    revealBtn.style.left = '50%';
+    revealBtn.style.transform = 'translateX(-50%)';
+    revealBtn.disabled = false;
+    revealBtn.title = "Click to reveal the full color image";
+    document.body.appendChild(revealBtn);
+
+    revealBtn.addEventListener('click', () => {
+        revealed = true;
+        revealBtn.disabled = true;
+        revealBtn.textContent = "Revealed";
+    });
+}
+
+// ---------- Main draw loop ----------
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (!grayCanvas) {
+        requestAnimationFrame(draw);
+        return;
+    }
+
+    // Background image
+    if (revealed) {
+        ctx.drawImage(baseColorCanvas, 0, 0);
+        ctx.globalCompositeOperation = "multiply";
+        ctx.drawImage(maskCanvas, 0, 0);
+        ctx.globalCompositeOperation = "source-over";
+    } else {
+        ctx.drawImage(grayCanvas, 0, 0);
+        if (maskGrayCanvas) ctx.drawImage(maskGrayCanvas, 0, 0);
+    }
+
+    requestAnimationFrame(draw);
+}
+
+// pointer tracking for single vs multi touch
+const activePointers = new Map();
+
+// ---------- Mouse / Touch handling ----------
+canvas.addEventListener('pointerdown', e => {
+    if (revealed) return;
+
+    activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    if (activePointers.size === 1) {
+        e.preventDefault();
+        try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+        drawing = true;
+        return;
+    }
+});
+
+canvas.addEventListener('pointermove', e => {
+    if (!activePointers.has(e.pointerId)) return;
+    activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (activePointers.size === 1 && drawing && !revealed) {
+        e.preventDefault();
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        drawBrush(x, y);
+    }
+});
+
+function removePointerAndMaybeStop(e) {
+    activePointers.delete(e.pointerId);
+    if (drawing) {
+        drawing = false;
+        try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+    }
+}
+canvas.addEventListener('pointerup', removePointerAndMaybeStop);
+canvas.addEventListener('pointerleave', removePointerAndMaybeStop);
+canvas.addEventListener('pointercancel', removePointerAndMaybeStop);
+
+// Add touch event listeners to conditionally prevent default behavior on iOS
+function preventDefaultIfSingleDrawing(e) {
+  if (e.touches.length === 1 && drawing) {
+    e.preventDefault();
+  }
+}
+canvas.addEventListener('touchstart', preventDefaultIfSingleDrawing, { passive: false });
+canvas.addEventListener('touchmove', preventDefaultIfSingleDrawing, { passive: false });
+canvas.addEventListener('touchend', preventDefaultIfSingleDrawing, { passive: false });
+canvas.addEventListener('touchcancel', preventDefaultIfSingleDrawing, { passive: false });
+
+// Brush drawing (now handles erase)
+function drawBrush(x, y) {
+    if (!maskCtx || !maskGrayCtx) return;
+
+    if (isErasing) {
+        maskCtx.save();
+        maskCtx.globalCompositeOperation = 'destination-out';
+        maskCtx.beginPath();
+        maskCtx.arc(x, y, eraserSize, 0, Math.PI*2);
+        maskCtx.fill();
+        maskCtx.restore();
+
+        maskGrayCtx.save();
+        maskGrayCtx.globalCompositeOperation = 'destination-out';
+        maskGrayCtx.beginPath();
+        maskGrayCtx.arc(x, y, eraserSize, 0, Math.PI*2);
+        maskGrayCtx.fill();
+        maskGrayCtx.restore();
+
+        if (!revealed) {
+            ctx.save();
+            ctx.globalCompositeOperation = 'destination-out';
+            ctx.beginPath();
+            ctx.arc(x, y, eraserSize, 0, Math.PI*2);
+            ctx.fill();
+            ctx.restore();
+        }
+        return;
+    }
+
+    maskCtx.fillStyle = `rgb(${currentColor.r},${currentColor.g},${currentColor.b})`;
+    maskCtx.beginPath();
+    maskCtx.arc(x, y, brushSize, 0, Math.PI*2);
+    maskCtx.fill();
+
+    if (maskGrayCtx) {
+        maskGrayCtx.fillStyle = `rgb(${grayColor},${grayColor},${grayColor})`;
+        maskGrayCtx.beginPath();
+        maskGrayCtx.arc(x, y, brushSize, 0, Math.PI*2);
+        maskGrayCtx.fill();
+    }
+
+    if (!revealed) {
+        ctx.fillStyle = `rgb(${grayColor},${grayColor},${grayColor})`;
+        ctx.beginPath();
+        ctx.arc(x, y, brushSize, 0, Math.PI*2);
+        ctx.fill();
+    }
+}
+
+// keyboard shortcuts
+window.addEventListener('keydown', e => {
+    if (e.key === 'e' || e.key === 'E') {
+        isErasing = !isErasing;
+        updateModeButtons();
+    }
+    if (e.key === '+' || e.key === '=') brushSize = Math.min(BRUSH_SIZE_MAX, brushSize + BRUSH_STEP);
+    if (e.key === '-') brushSize = Math.max(BRUSH_SIZE_MIN, brushSize - BRUSH_STEP);
+});
+
+// Optional: Right-click → save image
+canvas.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    canvas.toBlob(blob => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'my-mystery-coloring.png';
+        a.click();
+    });
+});
+ 
+</script>
+</body>
+</html>
