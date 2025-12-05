@@ -66,7 +66,7 @@
 </style>
 <script>
 // ====================== SETTINGS ======================
-const IMAGE_PATH = "images.jpg";   // Your coloring page (must be in same folder) - change to your file name if it's .png
+const DEFAULT_IMAGE_PATH = "images.jpg";   // Default coloring page
 const BRUSH_SIZE_MIN = 1;
 const BRUSH_SIZE_MAX = 10;
 const BRUSH_STEP = 1;
@@ -95,10 +95,12 @@ let originY = 0;
 const minScale = 0.1;
 const maxScale = 10;
 
+let currentImageURL = null;
+
 // Load image
 const img = new Image();
 img.crossOrigin = "anonymous";
-img.src = IMAGE_PATH + "?t=" + Date.now();
+img.src = DEFAULT_IMAGE_PATH + "?t=" + Date.now();
 
 // Helper to create offscreen canvases
 const createCanvas = (w, h) => {
@@ -171,9 +173,8 @@ window.addEventListener('resize', initCanvas);
 img.onerror = () => {
     ctx.fillStyle = "#ff5555";
     ctx.font = "30px Arial";
-    ctx.fillText("Error: Could not load " + IMAGE_PATH, 20, 60);
-    ctx.fillText("Make sure the file exists and is named exactly:", 20, 120);
-    ctx.fillText(IMAGE_PATH + " (check case and extension)", 20, 160);
+    ctx.fillText("Error: Could not load image", 20, 60);
+    ctx.fillText("Make sure the file exists and is an image", 20, 120);
 };
 
 // ---------- HSV → RGB ----------
@@ -370,6 +371,46 @@ function createToolButtons() {
     zoomOutBtn.style.width = '50px';
     zoomOutBtn.style.height = '50px';
     wrapper.appendChild(zoomOutBtn);
+
+    // Upload button
+    const uploadBtn = document.createElement('button');
+    uploadBtn.innerText = 'U';
+    uploadBtn.classList.add('btn', 'btn-warning', 'rounded-circle');
+    uploadBtn.style.position = 'absolute';
+    uploadBtn.style.top = '250px';
+    uploadBtn.style.left = '10px';
+    uploadBtn.style.width = '50px';
+    uploadBtn.style.height = '50px';
+    uploadBtn.title = 'Upload Image';
+    wrapper.appendChild(uploadBtn);
+
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'image/*';
+    fileInput.style.display = 'none';
+    wrapper.appendChild(fileInput);
+
+    uploadBtn.addEventListener('click', () => {
+        fileInput.click();
+    });
+
+    fileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            if (currentImageURL) {
+                URL.revokeObjectURL(currentImageURL);
+            }
+            currentImageURL = URL.createObjectURL(file);
+            img.src = currentImageURL;
+            // onload will trigger initCanvas
+            revealed = false;
+            const revealBtn = document.getElementById('revealBtn');
+            if (revealBtn) {
+                revealBtn.disabled = false;
+                revealBtn.textContent = "Reveal Colors";
+            }
+        }
+    });
 
     // Brush slider popup
     const brushSliderPopup = document.createElement('div');
