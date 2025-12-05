@@ -422,17 +422,11 @@ function createToolButtons() {
     brushSliderPopup.style.top = '10px';
     brushSliderPopup.style.left = '70px';
     brushSliderPopup.innerHTML = `
-        <label for="brushRange">Brush Size</label>
-        <input id="brushRange" type="range" min="1" max="10" step="1" value="${brushSize}">
+        <label>Brush Size</label>
+        <input id="brushRange" type="range" min="${BRUSH_SIZE_MIN}" max="${BRUSH_SIZE_MAX}" step="${BRUSH_STEP}" value="${brushSize}">
         <span id="brushVal">${brushSize}</span>px
     `;
     wrapper.appendChild(brushSliderPopup);
-    const brushRange = document.getElementById('brushRange');
-    const brushVal = document.getElementById('brushVal');
-    brushRange.addEventListener('input', (e) => {
-        brushSize = parseInt(e.target.value);
-        brushVal.textContent = brushSize;
-    });
 
     // Eraser slider popup
     const eraserSliderPopup = document.createElement('div');
@@ -441,17 +435,11 @@ function createToolButtons() {
     eraserSliderPopup.style.top = '70px';
     eraserSliderPopup.style.left = '70px';
     eraserSliderPopup.innerHTML = `
-        <label for="eraserRange">Eraser Size</label>
+        <label>Eraser Size</label>
         <input id="eraserRange" type="range" min="2" max="10" step="1" value="${eraserSize}">
         <span id="eraserVal">${eraserSize}</span>px
     `;
     wrapper.appendChild(eraserSliderPopup);
-    const eraserRange = document.getElementById('eraserRange');
-    const eraserVal = document.getElementById('eraserVal');
-    eraserRange.addEventListener('input', (e) => {
-        eraserSize = parseInt(e.target.value);
-        eraserVal.textContent = eraserSize;
-    });
 
     // Hide popups on click outside
     document.addEventListener('click', (e) => {
@@ -825,7 +813,20 @@ canvas.addEventListener('contextmenu', e => {
         a.click();
     });
 });
- 
+
+// Global listeners that work even after uploading new images
+document.addEventListener('input', (e) => {
+    if (e.target.id === 'brushRange') {
+        brushSize = parseInt(e.target.value);
+        const el = document.getElementById('brushVal');
+        if (el) el.textContent = brushSize;
+    }
+    if (e.target.id === 'eraserRange') {
+        eraserSize = parseInt(e.target.value);
+        const el = document.getElementById('eraserVal');
+        if (el) el.textContent = eraserSize;
+    }
+});
 </script>
 </body>
 </html>
