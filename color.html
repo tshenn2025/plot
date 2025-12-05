@@ -97,6 +97,9 @@ const maxScale = 10;
 
 let currentImageURL = null;
 
+let lastX = null;
+let lastY = null;
+
 // Load image
 const img = new Image();
 img.crossOrigin = "anonymous";
@@ -607,6 +610,11 @@ canvas.addEventListener('pointerdown', e => {
         e.preventDefault();
         try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
         drawing = true;
+        const clientX = e.clientX - rect.left;
+        const clientY = e.clientY - rect.top;
+        lastX = originX + clientX / currentScale;
+        lastY = originY + clientY / currentScale;
+        drawDot(lastX, lastY);  // Draw initial dot for taps or start of stroke
         return;
     } else if (activePointers.size === 2) {
         e.preventDefault();
@@ -632,9 +640,15 @@ canvas.addEventListener('pointermove', e => {
     const rect = canvas.getBoundingClientRect();
     if (activePointers.size === 1 && drawing && !revealed) {
         e.preventDefault();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        drawBrush(x, y);
+        const clientX = e.clientX - rect.left;
+        const clientY = e.clientY - rect.top;
+        const contentX = originX + clientX / currentScale;
+        const contentY = originY + clientY / currentScale;
+        if (lastX !== null && lastY !== null) {
+            drawLine(lastX, lastY, contentX, contentY);  // Connect previous to current
+        }
+        lastX = contentX;
+        lastY = contentY;
     } else if (activePointers.size === 2 && isGesturing) {
         e.preventDefault();
         const pointers = Array.from(activePointers.values());
@@ -664,6 +678,8 @@ function removePointerAndMaybeStop(e) {
     activePointers.delete(e.pointerId);
     if (drawing) {
         drawing = false;
+        lastX = null;  // Reset for next stroke
+        lastY = null;
         try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
     }
     if (activePointers.size < 2) {
@@ -695,41 +711,89 @@ canvas.addEventListener('wheel', e => {
     zoomAtPoint(factor, mouseX, mouseY);
 });
 
-// Brush drawing (now handles erase)
-function drawBrush(x, y) {
-    if (!maskCtx || !maskGrayCtx) return;
-
-    const contentX = originX + x / currentScale;
-    const contentY = originY + y / currentScale;
+// Draw a single dot (filled circle) at the starting point or for taps
+function drawDot(x, y) {
     const radius = (isErasing ? eraserSize : brushSize) / currentScale;
 
     if (isErasing) {
         maskCtx.save();
         maskCtx.globalCompositeOperation = 'destination-out';
         maskCtx.beginPath();
-        maskCtx.arc(contentX, contentY, radius, 0, Math.PI*2);
+        maskCtx.arc(x, y, radius, 0, Math.PI * 2);
         maskCtx.fill();
         maskCtx.restore();
 
         maskGrayCtx.save();
         maskGrayCtx.globalCompositeOperation = 'destination-out';
         maskGrayCtx.beginPath();
-        maskGrayCtx.arc(contentX, contentY, radius, 0, Math.PI*2);
+        maskGrayCtx.arc(x, y, radius, 0, Math.PI * 2);
         maskGrayCtx.fill();
         maskGrayCtx.restore();
-        return;
-    }
+    } else {
+        maskCtx.save();
+        maskCtx.fillStyle = `rgb(${currentColor.r},${currentColor.g},${currentColor.b})`;
+        maskCtx.beginPath();
+        maskCtx.arc(x, y, radius, 0, Math.PI * 2);
+        maskCtx.fill();
+        maskCtx.restore();
 
-    maskCtx.fillStyle = `rgb(${currentColor.r},${currentColor.g},${currentColor.b})`;
-    maskCtx.beginPath();
-    maskCtx.arc(contentX, contentY, radius, 0, Math.PI*2);
-    maskCtx.fill();
-
-    if (maskGrayCtx) {
+        maskGrayCtx.save();
         maskGrayCtx.fillStyle = `rgb(${grayColor},${grayColor},${grayColor})`;
         maskGrayCtx.beginPath();
-        maskGrayCtx.arc(contentX, contentY, radius, 0, Math.PI*2);
+        maskGrayCtx.arc(x, y, radius, 0, Math.PI * 2);
         maskGrayCtx.fill();
+        maskGrayCtx.restore();
+    }
+}
+
+// Draw a line segment from previous to current point
+function drawLine(prevX, prevY, x, y) {
+    const lineWidth = 2 * (isErasing ? eraserSize : brushSize) / currentScale;
+
+    if (isErasing) {
+        maskCtx.save();
+        maskCtx.globalCompositeOperation = 'destination-out';
+        maskCtx.beginPath();
+        maskCtx.moveTo(prevX, prevY);
+        maskCtx.lineTo(x, y);
+        maskCtx.lineWidth = lineWidth;
+        maskCtx.lineCap = 'round';
+        maskCtx.lineJoin = 'round';
+        maskCtx.stroke();
+        maskCtx.restore();
+
+        maskGrayCtx.save();
+        maskGrayCtx.globalCompositeOperation = 'destination-out';
+        maskGrayCtx.beginPath();
+        maskGrayCtx.moveTo(prevX, prevY);
+        maskGrayCtx.lineTo(x, y);
+        maskGrayCtx.lineWidth = lineWidth;
+        maskGrayCtx.lineCap = 'round';
+        maskGrayCtx.lineJoin = 'round';
+        maskGrayCtx.stroke();
+        maskGrayCtx.restore();
+    } else {
+        maskCtx.save();
+        maskCtx.strokeStyle = `rgb(${currentColor.r},${currentColor.g},${currentColor.b})`;
+        maskCtx.beginPath();
+        maskCtx.moveTo(prevX, prevY);
+        maskCtx.lineTo(x, y);
+        maskCtx.lineWidth = lineWidth;
+        maskCtx.lineCap = 'round';
+        maskCtx.lineJoin = 'round';
+        maskCtx.stroke();
+        maskCtx.restore();
+
+        maskGrayCtx.save();
+        maskGrayCtx.strokeStyle = `rgb(${grayColor},${grayColor},${grayColor})`;
+        maskGrayCtx.beginPath();
+        maskGrayCtx.moveTo(prevX, prevY);
+        maskGrayCtx.lineTo(x, y);
+        maskGrayCtx.lineWidth = lineWidth;
+        maskGrayCtx.lineCap = 'round';
+        maskGrayCtx.lineJoin = 'round';
+        maskGrayCtx.stroke();
+        maskGrayCtx.restore();
     }
 }
 
