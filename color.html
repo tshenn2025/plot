@@ -17,7 +17,9 @@
 </head>
 <body>
 
+<div id="wrapper">
 <canvas id="canvas"></canvas>
+</div>
 <!-- <div id="info">Long press tools for size • Tap color preview for palette • Tap "Reveal" below to show colors!</div> -->
  <style>
   body, html {
@@ -40,7 +42,7 @@
     margin: 20px auto;
     box-shadow: 0 0 20px rgba(0,0,0,0.1);
     border-radius: 12px;
-    overflow: hidden;
+    overflow: visible;
     background: white;
   }
 
@@ -110,7 +112,7 @@ function initCanvas() {
         oldMaskGrayCanvas = maskGrayCanvas;
     }
 
-    let zoom = Math.min(ZOOM, (window.innerWidth * 0.95) / img.width, (window.innerHeight * 0.75) / img.height);
+    let zoom = Math.min(ZOOM, (window.innerWidth * 0.95) / img.width, (window.innerHeight * 0.9) / img.height);
     logicalW = img.width * zoom;
     logicalH = img.height * zoom;
     const dpr = window.devicePixelRatio || 1;
@@ -217,6 +219,7 @@ function hsvToRgb(h, s, v) {
 
 // ---------- Build circular grayscale-looking color wheel & slider ----------
 function createPickerUI() {
+    const wrapper = document.getElementById('wrapper');
     const size = 180;
     const radius = size / 2;
 
@@ -257,7 +260,7 @@ function createPickerUI() {
     palettePopup.style.right = '10px';
     palettePopup.appendChild(wheelCanvas);
     palettePopup.appendChild(sliderCanvas);
-    document.body.appendChild(palettePopup);
+    wrapper.appendChild(palettePopup);
 
     // Color preview button
     const colorPreview = document.createElement('div');
@@ -270,7 +273,7 @@ function createPickerUI() {
     colorPreview.style.borderRadius = '50%';
     colorPreview.style.border = '2px solid #333';
     colorPreview.style.cursor = 'pointer';
-    document.body.appendChild(colorPreview);
+    wrapper.appendChild(colorPreview);
 
     // Toggle palette on preview click
     colorPreview.addEventListener('click', (e) => {
@@ -340,6 +343,7 @@ function updateColorPreview() {
 
 // Create brush and eraser buttons
 function createToolButtons() {
+    const wrapper = document.getElementById('wrapper');
     const LONG_PRESS_TIME = 500;
     let longPressTimer;
 
@@ -353,7 +357,7 @@ function createToolButtons() {
     brushBtn.style.left = '10px';
     brushBtn.style.width = '50px';
     brushBtn.style.height = '50px';
-    document.body.appendChild(brushBtn);
+    wrapper.appendChild(brushBtn);
 
     // Eraser button
     const eraserBtn = document.createElement('button');
@@ -365,7 +369,7 @@ function createToolButtons() {
     eraserBtn.style.left = '10px';
     eraserBtn.style.width = '50px';
     eraserBtn.style.height = '50px';
-    document.body.appendChild(eraserBtn);
+    wrapper.appendChild(eraserBtn);
 
     // Brush slider popup
     const brushSliderPopup = document.createElement('div');
@@ -378,7 +382,7 @@ function createToolButtons() {
         <input id="brushRange" type="range" min="1" max="10" step="1" value="${brushSize}">
         <span id="brushVal">${brushSize}</span>px
     `;
-    document.body.appendChild(brushSliderPopup);
+    wrapper.appendChild(brushSliderPopup);
     const brushRange = document.getElementById('brushRange');
     const brushVal = document.getElementById('brushVal');
     brushRange.addEventListener('input', (e) => {
@@ -397,7 +401,7 @@ function createToolButtons() {
         <input id="eraserRange" type="range" min="2" max="10" step="1" value="${eraserSize}">
         <span id="eraserVal">${eraserSize}</span>px
     `;
-    document.body.appendChild(eraserSliderPopup);
+    wrapper.appendChild(eraserSliderPopup);
     const eraserRange = document.getElementById('eraserRange');
     const eraserVal = document.getElementById('eraserVal');
     eraserRange.addEventListener('input', (e) => {
@@ -463,6 +467,7 @@ function updateModeButtons() {
 
 // Create reveal button
 function createRevealButton(h) {
+    const wrapper = document.getElementById('wrapper');
     const revealBtn = document.createElement('button');
     revealBtn.id = 'revealBtn';
     revealBtn.textContent = 'Reveal Colors';
@@ -473,7 +478,7 @@ function createRevealButton(h) {
     revealBtn.style.transform = 'translateX(-50%)';
     revealBtn.disabled = false;
     revealBtn.title = "Click to reveal the full color image";
-    document.body.appendChild(revealBtn);
+    wrapper.appendChild(revealBtn);
 
     revealBtn.addEventListener('click', () => {
         revealed = true;
@@ -551,15 +556,15 @@ canvas.addEventListener('pointerleave', removePointerAndMaybeStop);
 canvas.addEventListener('pointercancel', removePointerAndMaybeStop);
 
 // Add touch event listeners to conditionally prevent default behavior on iOS
-function preventDefaultIfSingleDrawing(e) {
-  if (e.touches.length === 1 && drawing) {
+function preventDefaultIfSingle(e) {
+  if (e.touches.length === 1) {
     e.preventDefault();
   }
 }
-canvas.addEventListener('touchstart', preventDefaultIfSingleDrawing, { passive: false });
-canvas.addEventListener('touchmove', preventDefaultIfSingleDrawing, { passive: false });
-canvas.addEventListener('touchend', preventDefaultIfSingleDrawing, { passive: false });
-canvas.addEventListener('touchcancel', preventDefaultIfSingleDrawing, { passive: false });
+canvas.addEventListener('touchstart', preventDefaultIfSingle, { passive: false });
+canvas.addEventListener('touchmove', preventDefaultIfSingle, { passive: false });
+canvas.addEventListener('touchend', preventDefaultIfSingle, { passive: false });
+canvas.addEventListener('touchcancel', preventDefaultIfSingle, { passive: false });
 
 // Brush drawing (now handles erase)
 function drawBrush(x, y) {
@@ -619,6 +624,14 @@ window.addEventListener('keydown', e => {
     }
     if (e.key === '+' || e.key === '=') brushSize = Math.min(BRUSH_SIZE_MAX, brushSize + BRUSH_STEP);
     if (e.key === '-') brushSize = Math.max(BRUSH_SIZE_MIN, brushSize - BRUSH_STEP);
+    if (e.key === ' ') {
+        revealed = !revealed;
+        const revealBtn = document.getElementById('revealBtn');
+        if (revealBtn) {
+            revealBtn.disabled = revealed;
+            revealBtn.textContent = revealed ? "Revealed" : "Reveal Colors";
+        }
+    }
 });
 
 // Optional: Right-click → save image
