@@ -157,31 +157,28 @@ function draw() {
 // Touch/mouse drawing
 let activePointers = new Map();
 
-canvas.addEventListener('pointerdown', e => {
-  if (revealed) return;
-  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-  const rect = canvas.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
-  if (activePointers.size === 1) {
-    e.preventDefault();
-    try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
-    drawing = true;
-    drawBrush(x, y);
-  }
+canvas.addEventListener('pointermove', e => {
+    if (!activePointers.has(e.pointerId)) return;
+    activePointers.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
+
+    if (activePointers.size === 1 && drawing && !revealed) {
+        e.preventDefault();
+        drawBrush(e.offsetX, e.offsetY);
+    }
 });
 
-canvas.addEventListener('pointermove', e => {
-  if (!activePointers.has(e.pointerId)) return;
-  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-  if (activePointers.size === 1 && drawing && !revealed) {
-    e.preventDefault();
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    drawBrush(x, y);
-  }
+canvas.addEventListener('pointerdown', e => {
+    if (revealed) return;
+    activePointers.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
+
+    if (activePointers.size === 1) {
+        e.preventDefault();
+        try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+        drawing = true;
+        drawBrush(e.offsetX, e.offsetY); // start immediately
+    }
 });
+
 
 function removePointer(e) {
   activePointers.delete(e.pointerId);
@@ -234,3 +231,4 @@ window.addEventListener('keydown', e => {
 </script>
 </body>
 </html>
+
