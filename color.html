@@ -112,7 +112,8 @@ function initCanvas() {
         oldMaskGrayCanvas = maskGrayCanvas;
     }
 
-    let zoom = Math.min(ZOOM, (window.innerWidth * 0.95) / img.width, (window.innerHeight * 0.9) / img.height);
+    // let zoom = Math.min(ZOOM, (window.innerWidth * 0.95) / img.width, (window.innerHeight * 0.9) / img.height);
+    let zoom = 1
     logicalW = img.width * zoom;
     logicalH = img.height * zoom;
     const dpr = window.devicePixelRatio || 1;
@@ -648,3 +649,4 @@ canvas.addEventListener('contextmenu', e => {
 </script>
 </body>
 </html>
+
