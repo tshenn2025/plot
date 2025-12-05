@@ -49,8 +49,15 @@
   canvas {
     display: block;
     image-rendering: pixelated;
-    touch-action: manipulation;
+    touch-action: none;
   }
+
+  #brushBtn, #eraserBtn {
+    width: 60px;
+    height: 60px;
+    font-size: 20px;
+}
+
 
   .popup {
     background: rgba(255,255,255,0.95);
@@ -112,8 +119,8 @@ function initCanvas() {
         oldMaskGrayCanvas = maskGrayCanvas;
     }
 
-    // let zoom = Math.min(ZOOM, (window.innerWidth * 0.95) / img.width, (window.innerHeight * 0.9) / img.height);
-    let zoom = 1
+    let zoom = Math.min((window.innerWidth * 0.95) / img.width, (window.innerHeight * 0.85) / img.height);
+
     logicalW = img.width * zoom;
     logicalH = img.height * zoom;
     const dpr = window.devicePixelRatio || 1;
@@ -649,4 +656,3 @@ canvas.addEventListener('contextmenu', e => {
 </script>
 </body>
 </html>
-
